@@ -2,7 +2,8 @@
 pragma solidity >=0.7.0 <0.9.0;
 
 /*
-transfer函数：赌金处理，from是被扣款的，to是收钱放，amount是赌金数
+pushToPool函数：玩家点击开始或者rise时触发
+scoopFromPool函数：给胜者
 freezeUser函数：开启赌局前冻结账户，不允许赌局期前提现
 unfreezeUser函数：赌局结束后恢复
 addToWhitelist函数；给每个游戏管理者白名单进行转账操作
@@ -25,12 +26,17 @@ contract UserVaultSystem {
     mapping(address => User) public users;
     mapping(address => bool) public whitelist;
 
+    uint256 public gamePoolBalance=100 ether;
+
+
     event UserRegistered(address indexed userAddress, string username);
     event Deposited(address indexed userAddress, uint256 amount);
     event Withdrawn(address indexed userAddress, uint256 amount);
     event LoggedIn(address indexed userAddress);
     event LoggedOut(address indexed userAddress);
-    event Transferred(address indexed from, address indexed to, uint256 amount);
+    // event Transferred(address indexed from, address indexed to, uint256 amount);
+    event PushedToPool(address indexed user, uint256 amount);
+    event ScoopedFromPool(address indexed user, uint256 amount);
     event WhitelistAdded(address indexed account);
     event WhitelistRemoved(address indexed account);
     event UserFrozen(address indexed userAddress);
@@ -159,41 +165,76 @@ contract UserVaultSystem {
     }
 
     //For downstream use
-    function transfer(address from, address to, uint256 amount) external onlyOwnerOrWhitelist {
-        require(users[from].exists, "Sender not registered");
+    // function transfer(address from, address to, uint256 amount) external onlyOwnerOrWhitelist {
+    //     require(users[from].exists, "Sender not registered");
+    //     require(users[to].exists, "Recipient not registered");
+    //     require(amount > 0, "Transfer amount must be greater than 0");
+    //     require(users[from].balance >= amount, "Insufficient balance for transfer");
+
+    //     require(
+    //          msg.sender == owner || whitelist[msg.sender],
+    //         "Not authorized"
+    //     );
+
+    //     users[from].balance -= amount;
+    //     users[to].balance += amount;
+
+    //     emit Transferred(from, to, amount);
+    // }
+    function pushToPool(uint256 amount) external onlyRegisteredUser onlyLoggedIn {
+        require(amount > 0, "Amount must be greater than 0");
+        require(users[msg.sender].balance >= amount, "Insufficient balance");
+        require(!users[msg.sender].frozen, "User account is frozen");
+
+        users[msg.sender].balance -= amount;
+
+        gamePoolBalance += amount;
+
+        emit PushedToPool(msg.sender, amount); 
+    }
+
+    function scoopFromPool(address to, uint256 amount) external onlyOwnerOrWhitelist {
         require(users[to].exists, "Recipient not registered");
-        require(amount > 0, "Transfer amount must be greater than 0");
-        require(users[from].balance >= amount, "Insufficient balance for transfer");
-        require(!users[from].frozen, "Sender account is frozen");
+        require(amount > 0, "Amount must be greater than 0");
+        require(gamePoolBalance >= amount, "Insufficient pool balance");
 
-        require(
-             msg.sender == owner || whitelist[msg.sender],
-            "Not authorized"
-        );
+        gamePoolBalance -= amount;
 
-        users[from].balance -= amount;
         users[to].balance += amount;
 
-        emit Transferred(from, to, amount);
+        emit ScoopedFromPool(msg.sender, amount);
+    }
+
+    function addToPool(uint256 amount) external onlyOwnerOrWhitelist {
+        require(amount > 0, "Amount must be > 0");
+
+        gamePoolBalance += amount;
+    }
+
+    function removeFromPool(uint256 amount) external onlyOwnerOrWhitelist {
+        require(amount > 0, "Amount must be > 0");
+        require(gamePoolBalance >= amount, "Insufficient pool balance");
+
+        gamePoolBalance -= amount;
     }
 
     //For downstream use
-    function freezeUser(address userAddress) external onlyOwnerOrWhitelist {
-        require(users[userAddress].exists, "User not registered");
-        require(!users[userAddress].frozen, "User already frozen");
+    // function freezeUser(address userAddress) external onlyOwnerOrWhitelist {
+    //     require(users[userAddress].exists, "User not registered");
+    //     require(!users[userAddress].frozen, "User already frozen");
 
-        users[userAddress].frozen = true;
-        emit UserFrozen(userAddress);
-    }
+    //     users[userAddress].frozen = true;
+    //     emit UserFrozen(userAddress);
+    // }
 
-    //For downstream use
-    function unfreezeUser(address userAddress) external onlyOwnerOrWhitelist {
-        require(users[userAddress].exists, "User not registered");
-        require(users[userAddress].frozen, "User is not frozen");
+    // //For downstream use
+    // function unfreezeUser(address userAddress) external onlyOwnerOrWhitelist {
+    //     require(users[userAddress].exists, "User not registered");
+    //     require(users[userAddress].frozen, "User is not frozen");
 
-        users[userAddress].frozen = false;
-        emit UserUnfrozen(userAddress);
-    }
+    //     users[userAddress].frozen = false;
+    //     emit UserUnfrozen(userAddress);
+    // }
 
     //For downstream use
     function isBalanceGreaterThan(address userAddress, uint256 amount) external view returns (bool) {
